@@ -1,0 +1,8 @@
+source 'https://rubygems.org'
+gem 'gitlab-grack', '~> 2.0.0.pre'
+gem 'geminabox'
+gem 'pry'
+gem 'yard'
+gem 'kramdown'
+gem 'coderay'
+gem 'coderay_bash'
