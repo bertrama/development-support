@@ -27,11 +27,11 @@ module Support
     end
 
     def root
-      ENV['APP_ROOT'] || ''
+      (ENV['APP_ROOT'] || '').chomp('/')
     end
 
     def context
-      ENV['APP_CONTEXT'] || ''
+      (ENV['APP_CONTEXT'] || '').chomp('/')
     end
 
     def forward path
@@ -43,8 +43,13 @@ module Support
     end
 
     def reverse path
-      if path.include?(root + '/')
-        path.sub(%r{#{root + '/'}}, context + '/')
+      if root.length > 0
+        matches = %r{([a-z]*://[^/]*)(/.*|$)}.match(path)
+        if matches[2].index(root) === 0
+          matches[1] + matches[2].sub(root, context + additional)
+        else
+          path
+        end
       else
         path
       end
