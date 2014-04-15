@@ -4,13 +4,54 @@ require 'coderay'
 require 'coderay_bash'
 require 'support'
 
+ENV['HOME'] = Dir.pwd
+require 'yard'
+require 'yard/cli/command_parser'
+
 module Support
   class MDServer < Sinatra::Base
+    def self.gemfile_thread
+      return nil
+      #Thread.new do ; loop do
+      #  Dir.glob(File.join(CONFIG[:gemserver][:data], '**/*.gem')) do |gem|
+      #    @@gemfiles[File.basename(gem)] = gem
+      #  end
+      #end ; end
+    end
+    def self.gemspec_thread
+      Thread.new do ; loop do
+        if @@gemspecs.empty?
+          sleep 10
+        else
+          sleep 30
+          spec = @@gemspecs.shift
+          begin
+            base = Dir.pwd
+            name = File.basename(spec.spec_name, '.gemspec')
+            output = File.join(base, CONFIG[:browser][:yard_out], name)
+            yardoc = File.join(base, CONFIG[:browser][:yardoc], name)
+            Dir.chdir spec.full_gem_path do |dir|
+              YARD::CLI::CommandParser.run 'doc',
+                '-o', output,
+                '-c', yardoc,
+                '-b', yardoc,
+                '--single-db'
+            end
+          rescue Exception => e
+          end
+        end
+      end ; end
+    end
+
     configure do
       set :file_root,  CONFIG[:browser][:file_root]
       set :nav_links,  CONFIG[:browser][:nav_links]
       set :assets,     CONFIG[:browser][:assets]
       settings.views = File.expand_path(CONFIG[:browser][:views])
+      @@gemspecs = []
+      @@gemspec_thread = gemspec_thread
+      @@gemfiles = {}
+      @@gemfile_thread = gemfile_thread
     end
 
     helpers do
@@ -42,18 +83,22 @@ module Support
       end
 
       def git_base p = nil
-        p = File.join(CONFIG[:browser][:file_root], params['captures'].first.chomp('/')) if p.nil?
-        if p === CONFIG[:browser][:file_root] or p === '.' or p.length === 0
+        if params['captures'].nil?
           false
-        elsif File.directory? p
-          candidate = File.join(p, '.git')
-          if File.exists? candidate
-            "http://#{request.host}#{request.script_name}#{p[CONFIG[:browser][:file_root].length, p.length]}"
+        else
+          p = File.join(CONFIG[:browser][:file_root], params['captures'].first.chomp('/')) if p.nil?
+          if p === CONFIG[:browser][:file_root] or p === '.' or p.length === 0
+            false
+          elsif File.directory? p
+            candidate = File.join(p, '.git')
+            if File.exists? candidate
+              "http://#{request.host}#{request.script_name}#{p[CONFIG[:browser][:file_root].length, p.length]}"
+            else
+              git_base File.dirname(p)
+            end
           else
             git_base File.dirname(p)
           end
-        else
-          git_base File.dirname(p)
         end
       end
 
@@ -82,6 +127,8 @@ module Support
           when '..'
             if File.basename(file) === settings.file_root
               nil
+            elsif File.dirname(p) === '/'
+              {name: ent, path: File.dirname(p)}
             else
               {name: ent, path: File.dirname(p) + '/'}
             end
@@ -92,7 +139,7 @@ module Support
               {name: ent, path: p + ent}
             end
           end
-        end.compact }, layout: false}
+        end.compact.sort {|a,b| a[:path] <=> b[:path]}}, layout: false}
       end
 
       def kramdown file
@@ -115,6 +162,8 @@ module Support
       if file and File.directory?(file)
         if File.exists? file + "index.md"
           redirect to(params['captures'].first + "index.md")
+        elsif File.exists? file + "index.html"
+          redirect to(params['captures'].first + 'index.html')
         else
           erb directory(file, path.chomp('/') + params['captures'].first), locals: {
             title: get_title(file),
@@ -139,6 +188,51 @@ module Support
       else
         pass
       end
+    end
+    get '/yard/admin' do
+      admin = <<-EOF
+<div class="well well-sm">
+  <a href="#{url('yard/status')}">Status</a>
+</div>
+<div class="well well-sm">
+  <a href="#{url('yard/clear')}">Clear</a>
+</div>
+<div class="well well-sm">
+  <a href="#{url('yard/regen')}">Regen</a>
+</div>
+      EOF
+      erb admin, locals: {
+        title: 'Yard Admin',
+        breadcrumbs: false
+      }
+      
+    end
+    get '/yard/clear' do
+      @@gemspecs = []
+      erb "Yard queue cleared", locals: {
+        title: 'Yard Status',
+        breadcrumbs: '<a href="/">Home</a> / Yard Clear'
+      }
+    end
+    get '/yard/status' do
+      erb "<div class=\"well\">Status: #{@@gemspecs.length} specs to index.</div>", locals: {
+        title: 'Yard Status',
+        breadcrumbs: '<a href="/">Home</a> / Yard Status'
+      }
+    end
+    get '/yard/regen' do
+      tmp = Gem.paths
+      Gem.use_paths tmp.home, tmp.path | Gem.default_path
+      Gem::Specification.all = nil
+      Gem::Specification.each do |spec|
+        @@gemspecs << spec
+      end
+      Gem.use_paths tmp.home, tmp.path
+      Gem::Specification.reset
+      erb 'Regenerating Yard Documents', locals: {
+        title: 'Yard Regen',
+        breadcrumbs: 'Home'
+      }
     end
   end
 end
