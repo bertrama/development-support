@@ -20,7 +20,3 @@ end
 map '/gem' do
   run Support::GeminaboxApp.new
 end
-
-map '/yard' do
-  run Support::YardApp.new
-end
