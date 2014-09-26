@@ -47,6 +47,7 @@ module Support
       set :file_root,  CONFIG[:browser][:file_root]
       set :nav_links,  CONFIG[:browser][:nav_links]
       set :assets,     CONFIG[:browser][:assets]
+      set :root_redirect, CONFIG[:browser][:root_redirect]
       settings.views = File.expand_path(CONFIG[:browser][:views])
       @@gemspecs = []
       @@gemspec_thread = gemspec_thread
@@ -146,6 +147,11 @@ module Support
         Kramdown::Document.new(IO.read(file)).to_html
       end
     end
+
+    get '/' do
+      redirect to(settings.root_redirect)
+    end
+
     get %r{^(.*\.md)$} do
       file = resolve_path params['captures'].first
       if file
